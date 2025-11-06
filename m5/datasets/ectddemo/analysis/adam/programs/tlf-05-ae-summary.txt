@@ -1,0 +1,109 @@
+import polars as pl
+import rtflite as rtf
+
+from demo001 import find_project_root, load_adam_dataset
+from demo001.safety import create_ae_summary, format_ae_summary
+
+pl.Config.set_tbl_rows(5)
+
+project_root = find_project_root()
+adsl = load_adam_dataset("adsl", project_root)
+adae = load_adam_dataset("adae", project_root)
+
+adsl.select(["USUBJID", "TRT01A", "SAFFL"])
+
+adae.select(["USUBJID", "AEREL", "AESER", "AEOUT", "AEACN"])
+
+adsl_safety = adsl.filter(pl.col("SAFFL") == "Y").select(["USUBJID", "TRT01A"])
+
+pop_counts = adsl_safety.group_by("TRT01A").agg(N=pl.len()).sort("TRT01A")
+
+treatment_levels = pop_counts.select(["TRT01A"])
+
+pop_counts
+
+adae_safety = adae.join(adsl_safety, on="USUBJID")
+
+adae_safety.height
+
+ae_summary = create_ae_summary(adae_safety, pop_counts, treatment_levels)
+
+ae_summary.sort(["category", "TRT01A"])
+
+ae_formatted = format_ae_summary(ae_summary, pop_counts)
+
+ae_formatted.select(["category", "TRT01A", "n_display", "pct_display"])
+
+category_order = [
+    "Participants in population",
+    "With any adverse event",
+    "With drug-related adverse event",
+    "With serious adverse event",
+    "With serious drug-related adverse event",
+    "Who died",
+    "Discontinued due to adverse event",
+]
+
+ae_wide = ae_formatted.pivot(
+    values=["n_display", "pct_display"],
+    index="category",
+    on="TRT01A",
+    maintain_order=True,
+)
+
+treatments = ["Placebo", "Xanomeline Low Dose", "Xanomeline High Dose"]
+column_order = ["category"]
+for trt in treatments:
+    column_order.extend([f"n_display_{trt}", f"pct_display_{trt}"])
+
+final_table = ae_wide.select(column_order).sort(
+    pl.col("category").cast(pl.Enum(category_order))
+)
+
+final_table
+
+n_placebo = pop_counts.filter(pl.col("TRT01A") == "Placebo")["N"][0]
+n_low = pop_counts.filter(pl.col("TRT01A") == "Xanomeline Low Dose")["N"][0]
+n_high = pop_counts.filter(pl.col("TRT01A") == "Xanomeline High Dose")["N"][0]
+
+doc_ae_summary = rtf.RTFDocument(
+    df=final_table.rename({"category": ""}),
+    rtf_title=rtf.RTFTitle(
+        text=["Analysis of Adverse Event Summary", "(Safety Analysis Population)"]
+    ),
+    rtf_column_header=[
+        rtf.RTFColumnHeader(
+            text=["", "Placebo", "Xanomeline Low Dose", "Xanomeline High Dose"],
+            col_rel_width=[4, 2, 2, 2],
+            text_justification=["l", "c", "c", "c"],
+        ),
+        rtf.RTFColumnHeader(
+            text=[
+                "",  # Empty for first column
+                "n",
+                "(%)",  # Placebo columns
+                "n",
+                "(%)",  # Low Dose columns
+                "n",
+                "(%)",  # High Dose columns
+            ],
+            col_rel_width=[4] + [1] * 6,
+            text_justification=["l"] + ["c"] * 6,
+            border_left=["single"] + ["single", ""] * 3,
+            border_top=[""] + ["single"] * 6,
+        ),
+    ],
+    rtf_body=rtf.RTFBody(
+        col_rel_width=[4] + [1] * 6,
+        text_justification=["l"] + ["c"] * 6,
+        border_left=["single"] + ["single", ""] * 3,
+    ),
+    rtf_footnote=rtf.RTFFootnote(
+        text=[
+            "Every subject is counted a single time for each applicable row and column."
+        ]
+    ),
+    rtf_source=rtf.RTFSource(text=["Source: ADSL and ADAE datasets"]),
+)
+
+doc_ae_summary.write_rtf(project_root / "output" / "tlf_ae_summary.rtf")

@@ -1,0 +1,78 @@
+import polars as pl
+import rtflite as rtf
+
+from demo001 import find_project_root, load_adam_dataset
+from demo001.safety import create_ae_by_soc_table
+
+pl.Config.set_tbl_rows(5)
+
+project_root = find_project_root()
+adsl = load_adam_dataset("adsl", project_root)
+adae = load_adam_dataset("adae", project_root)
+treatments = ["Placebo", "Xanomeline Low Dose", "Xanomeline High Dose"]
+
+adae_vars = adae.select(["USUBJID", "TRTA", "AEBODSYS", "AEDECOD", "AESEV", "AESER"])
+adae_vars
+
+soc_summary = (
+    adae.group_by("AEBODSYS")
+    .agg(n_participants=pl.col("USUBJID").n_unique(), n_events=pl.len())
+    .sort("n_participants", descending=True)
+)
+soc_summary
+
+adsl_safety = adsl.filter(pl.col("SAFFL") == "Y").select(["USUBJID", "TRT01A"])
+adsl_safety.height
+
+pop_counts = adsl_safety.group_by("TRT01A").agg(N=pl.len()).sort("TRT01A")
+pop_counts
+
+adae_safety = adae.join(adsl_safety, on="USUBJID", how="inner")
+adae_safety.height
+
+df_ae_specific = create_ae_by_soc_table(adae_safety, pop_counts, treatments)
+
+df_ae_specific.shape
+df_ae_specific
+
+doc_ae_specific = rtf.RTFDocument(
+    df=df_ae_specific,
+    rtf_title=rtf.RTFTitle(
+        text=[
+            "Adverse Events by System Organ Class and Preferred Term",
+            "(Safety Analysis Set)",
+        ]
+    ),
+    rtf_column_header=rtf.RTFColumnHeader(
+        text=[
+            "System Organ Class\\line   Preferred Term",
+            f"Placebo\\line (N={pop_counts.filter(pl.col('TRT01A') == 'Placebo')['N'][0]})",
+            f"Xanomeline Low Dose\\line (N={pop_counts.filter(pl.col('TRT01A') == 'Xanomeline Low Dose')['N'][0]})",
+            f"Xanomeline High Dose\\line (N={pop_counts.filter(pl.col('TRT01A') == 'Xanomeline High Dose')['N'][0]})",
+        ],
+        col_rel_width=[4, 1.5, 1.5, 1.5],
+        text_justification=["l", "c", "c", "c"],
+        text_format="b",  # Bold headers
+        border_bottom="single",
+    ),
+    rtf_body=rtf.RTFBody(
+        col_rel_width=[4, 1.5, 1.5, 1.5],
+        text_justification=["l", "c", "c", "c"],
+        # Apply bold formatting to SOC headers (rows without indentation)
+        text_font_style=lambda df, i, j: "b"
+        if j == 0 and not str(df[i, j]).startswith("  ") and str(df[i, j]) != ""
+        else "",
+    ),
+    rtf_footnote=rtf.RTFFootnote(
+        text=[
+            "MedDRA version 25.0.",
+            "Each participant is counted once within each preferred term and system organ class.",
+            "Participants with multiple events in the same preferred term are counted only once for that term.",
+        ]
+    ),
+    rtf_source=rtf.RTFSource(
+        text=["Source: ADAE Analysis Dataset (Data cutoff: 01JAN2023)"]
+    ),
+)
+
+doc_ae_specific.write_rtf(project_root / "output" / "tlf_ae_specific.rtf")

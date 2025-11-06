@@ -1,0 +1,47 @@
+import polars as pl
+import rtflite as rtf
+
+from demo001 import find_project_root, load_adam_dataset
+from demo001.population import create_population_summary, format_population_table
+
+pl.Config.set_tbl_rows(5)
+
+project_root = find_project_root()
+adsl = load_adam_dataset("adsl", project_root)
+
+adsl.select(["USUBJID", "TRT01P", "ITTFL", "EFFFL", "SAFFL"])
+
+totals = adsl.group_by("TRT01P").agg(total=pl.len())
+totals
+
+pop_summary = create_population_summary(adsl)
+pop_summary
+
+df_overview = format_population_table(pop_summary, totals)
+df_overview = df_overview.select(
+    ["population", "Placebo", "Xanomeline Low Dose", "Xanomeline High Dose"]
+)
+
+df_overview
+
+doc_overview = rtf.RTFDocument(
+    df=df_overview,
+    rtf_title=rtf.RTFTitle(text=["Analysis Population", "All Participants Randomized"]),
+    rtf_column_header=rtf.RTFColumnHeader(
+        text=[
+            "",
+            "Placebo\nn (%)",
+            "Xanomeline Low Dose\nn (%)",
+            "Xanomeline High Dose\nn (%)",
+        ],
+        col_rel_width=[4, 2, 2, 2],
+        text_justification=["l", "c", "c", "c"],
+    ),
+    rtf_body=rtf.RTFBody(
+        col_rel_width=[4, 2, 2, 2],
+        text_justification=["l", "c", "c", "c"],
+    ),
+    rtf_source=rtf.RTFSource(text=["Source: ADSL dataset"]),
+)
+
+doc_overview.write_rtf(project_root / "output" / "tlf_population.rtf")
