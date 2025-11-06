@@ -1,10 +1,11 @@
-# demo_py_ectd
+# demo-py-ectd
 
-*Note: this README.md is not part of the submission package: delete after read.*
+> [!NOTE]
+> This `README.md` file is not part of the submission package: delete after read.
 
 ## Overview
 
-This repo contains a demo eCTD submission package (not Python package)
+This repo contains a demo eCTD submission package (not the Python package)
 as a companion of the book
 [Python for Clinical Study Reports and Submission](https://pycsr.org/).
 
@@ -25,4 +26,5 @@ following ADaM IG v1.0, publicly available at the
 
 ## Links
 
-For a demo Python project, check [demo_py_esub](https://github.com/elong0527/demo_py_esub).
+For a demo Python analysis project, see
+[elong0527/demo-py-esub](https://github.com/elong0527/demo-py-esub).
