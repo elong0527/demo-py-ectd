@@ -1,0 +1,58 @@
+import polars as pl
+import rtflite as rtf
+
+from demo001 import find_project_root, load_adam_dataset
+from demo001.baseline import create_baseline_table
+
+pl.Config.set_tbl_rows(5)
+
+project_root = find_project_root()
+adsl = load_adam_dataset("adsl", project_root).select(
+    ["USUBJID", "TRT01P", "AGE", "SEX", "RACE"]
+)
+
+adsl
+
+continuous_vars = ["AGE"]
+categorical_vars = ["SEX", "RACE"]
+treatments = ["Placebo", "Xanomeline Low Dose", "Xanomeline High Dose"]
+
+baseline_table = create_baseline_table(
+    adsl=adsl,
+    continuous_vars=continuous_vars,
+    categorical_vars=categorical_vars,
+    treatments=treatments,
+)
+
+baseline_table
+
+treatment_n = adsl.group_by("TRT01P").len().sort("TRT01P")
+n_placebo = treatment_n.filter(pl.col("TRT01P") == "Placebo")["len"][0]
+n_low = treatment_n.filter(pl.col("TRT01P") == "Xanomeline Low Dose")["len"][0]
+n_high = treatment_n.filter(pl.col("TRT01P") == "Xanomeline High Dose")["len"][0]
+
+doc_baseline = rtf.RTFDocument(
+    df=baseline_table,
+    rtf_title=rtf.RTFTitle(
+        text=[
+            "Baseline Characteristics of Participants",
+            "(All Participants Randomized)",
+        ]
+    ),
+    rtf_column_header=rtf.RTFColumnHeader(
+        text=[
+            "Characteristic",
+            f"Placebo\n(N={n_placebo})",
+            f"Xanomeline Low Dose\n(N={n_low})",
+            f"Xanomeline High Dose\n(N={n_high})",
+        ],
+        text_justification=["l", "c", "c", "c"],
+        col_rel_width=[3, 2, 2, 2],
+    ),
+    rtf_body=rtf.RTFBody(
+        text_justification=["l", "c", "c", "c"], col_rel_width=[3, 2, 2, 2]
+    ),
+    rtf_source=rtf.RTFSource(text=["Source: ADSL dataset"]),
+)
+
+doc_baseline.write_rtf(project_root / "output" / "tlf_baseline.rtf")
